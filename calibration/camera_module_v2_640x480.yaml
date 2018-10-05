@@ -1,20 +1,26 @@
+%YAML:1.0
+---
 image_width: 640
 image_height: 480
 camera_name: raspicam
-camera_matrix:
+camera_matrix: !!opencv-matrix
   rows: 3
   cols: 3
+  dt: d
   data: [556.5250543909606, 0, 323.1341418711615, 0, 516.0814264720717, 231.5051365870941, 0, 0, 1]
 distortion_model: plumb_bob
-distortion_coefficients:
+distortion_coefficients: !!opencv-matrix
   rows: 1
   cols: 5
+  dt: d
   data: [0.1915250639431566, -0.4623037094569031, 0.00130345932763652, -0.004691457734403636, 0]
-rectification_matrix:
+rectification_matrix: !!opencv-matrix
   rows: 3
   cols: 3
+  dt: d
   data: [1, 0, 0, 0, 1, 0, 0, 0, 1]
-projection_matrix:
+projection_matrix: !!opencv-matrix
   rows: 3
   cols: 4
+  dt: d
   data: [564.2156372070312, 0, 320.6582796800503, 0, 0, 526.920654296875, 231.871280004314, 0, 0, 0, 1, 0]

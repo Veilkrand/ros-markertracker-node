@@ -2,7 +2,13 @@
 
 Node to detect and estimate pose of ArUCO markers from a subscribed raw image topic from the camera.
 
-## Inputs Parameters
+## TODO
+
+-- Define message format with several geometry. Not include euler??
+-- Check latency of messages. Fix buffer size??
+
+
+## Inputs Parameters. TODO: Update to latest inputs
 
 * image_topic  [Image topic]: (Empty) Input image topic to process from camera frames.
 * max_n_markers [Integer]: (10) Maximum number of markers to detect. Optimization param.
@@ -15,3 +21,17 @@ Node to detect and estimate pose of ArUCO markers from a subscribed raw image to
 
  * /markertracker_node/detected_markers
  * /markertracker_node/image_result (only if `show_image_topic==True`)
+ 
+## Visualization
+
+rosrun image_view image_view image:=markertracker_node/image_result
+
+## Output marker object
+```
+    {
+        'marker_id': 10,
+        'tvec': array([-17.79854065,  -4.45784617,  59.2286418 ]),
+        'rvec': array([ 2.9659655 ,  0.19115458, -0.55335781]), 
+        'euler': array([ 3.04171163,  0.3740164 ,  0.10980613])
+    }
+```
