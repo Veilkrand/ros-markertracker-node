@@ -4,9 +4,11 @@ Node to detect and estimate pose of ArUCO markers from a subscribed raw image to
 
 ## TODO
 
--- Define message format with several geometry. Not include euler??
--- Check latency of messages. Fix buffer size??
-
+-- Implement blacklist and whitelist for aruco Ids. 17 is easily confused for 4x4 and background noise
+-- Finish message implementation
+-- Check real latency and delay. For result packages and initial image frames: how long since the capture of the raw image from camera.
+-- Implement full visualization for rviz?
+-- Optimize Aruco classes.
 
 ## Inputs Parameters. TODO: Update to latest inputs
 
@@ -22,9 +24,11 @@ Node to detect and estimate pose of ArUCO markers from a subscribed raw image to
  * /markertracker_node/detected_markers
  * /markertracker_node/image_result (only if `show_image_topic==True`)
  
-## Visualization
+## Result Visualization
 
-rosrun image_view image_view image:=markertracker_node/image_result
+`rqt_image_view`
+`rosrun image_view image_view image:=markertracker_node/image_result`
+
 
 ## Output marker object
 ```

@@ -23,13 +23,17 @@ from cv_bridge import CvBridge, CvBridgeError
 #from std_msgs.msg import String
 from visualization_msgs.msg import Marker
 from visualization_msgs.msg import MarkerArray
+from geometry_msgs.msg import Point, Point32
 from sensor_msgs.msg import Image, CameraInfo
-import tf.transformations as tf
+
+from markertracker_node.msg import Marker, MarkersArray
+
+import tf.transformations as tf # Needed?
 
 from ArucoWrapper import ArucoWrapper
 
 
-class PublisherSubscriberProcessFrame():
+class PublisherSubscriberProcessFrame(object):
     """
      Subscribe to a image topic, call a process callback and publish results
     """
@@ -62,12 +66,14 @@ class PublisherSubscriberProcessFrame():
         # Subscriber
         self.image_sub = rospy.Subscriber(_input_image_topic, Image, self.process_frame, queue_size=1)
 
+        ## Publishers
         # Image Publisher
         if self.publish_topic_image_result:
             self.image_pub = rospy.Publisher(_result_image_topic, Image, queue_size=1)
         # Marker viz publisher
         self.marker_viz_pub = rospy.Publisher(_result_markers_viz_topic, MarkerArray, queue_size=1)
-
+        # Marker results publishers
+        self.marker_pub = rospy.Publisher(_result_poses_topic, MarkersArray, queue_size=1)
         # Result publisher
         self.result_pub = rospy.Publisher(_result_poses_topic, Image, queue_size=1)
 
@@ -88,22 +94,42 @@ class PublisherSubscriberProcessFrame():
         except CvBridgeError as e:
             print(e)
 
-        ## Pose
-        cv_image_result, poses = self.detector.get_poses_from_image(cv_image, draw_image=self.publish_topic_image_result)
+        ## Pose and corners used
+        cv_image_result, poses, corners = self.detector.get_poses_from_image(cv_image, draw_image=self.publish_topic_image_result)
 
         # process pose
         if poses is not None:
-            print(poses)
-            self._create_viz_markers_from_results(poses)
-
+            self._create_and_publish_markers_msg_from_results(poses, corners)
+            # self._create_viz_markers_from_results(poses)
 
         if cv_image_result is not None: image = cv_image_result
-
 
         ## Publish Image
         if self.publish_topic_image_result:
             self._publish_cv_image(image)
 
+    def _create_and_publish_markers_msg_from_results(self, poses, corners):
+        #print(poses)
+
+        markers_array = MarkersArray()
+        markers_array.header.stamp = rospy.Time.now()
+
+        for e in poses:
+
+            marker = Marker()
+            marker.id = int(e['marker_id'])
+            marker.translation_vector = Point(e['tvec'][0], e['tvec'][1], e['tvec'][2])
+            marker.rotation_vector = Point(e['rvec'][0],e['rvec'][1],e['rvec'][2])
+            marker.rotation_euler = Point(e['euler'][0],e['euler'][1],e['euler'][2])
+            # marker.corners = corners[0] implement
+            markers_array.marker.append(marker)
+
+        self.marker_pub.publish(markers_array)
+
+
+
+
+    # Marker visualization test. It didn't work very well
     def _create_viz_markers_from_results(self, results):
 
         if results is None:
@@ -118,7 +144,6 @@ class PublisherSubscriberProcessFrame():
             marker.header.frame_id = self.node_name
             marker.header.stamp = rospy.Time.now()
             q = tf.quaternion_from_euler(m['euler'][0], m['euler'][1], m['euler'][2], 'ryxz')
-            #marker.header.stamp = ros::Time::now();
             marker.id = m['marker_id']
             marker.ns = self.node_name
             marker.type = marker.CUBE

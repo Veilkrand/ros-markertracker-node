@@ -1,0 +1,6 @@
+uint16 id
+geometry_msgs/Point translation_vector
+geometry_msgs/Point rotation_vector
+geometry_msgs/Point rotation_euler
+geometry_msgs/Point32[] corners
+time camera_frame_stamp

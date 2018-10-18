@@ -37,6 +37,7 @@ class ArucoWrapper:
 
         aruco_corners, aruco_ids, aruco_rejected_points = aruco.detectMarkers(image_gray, self.aruco_dict, parameters=self.parameters)
 
+
         if draw_image is True and aruco_ids is not None and len(aruco_ids) > 0:
             image_result = aruco.drawDetectedMarkers(image, aruco_corners, aruco_ids)
 
@@ -44,6 +45,11 @@ class ArucoWrapper:
 
 
     def find_poses_from_corners(self, aruco_ids, aruco_corners,image_color=None, draw_image=False):
+
+        # delete id 17! TODO: handle outside with params! optimize iteration. Ideally you should be able to define ids to track or to ignore.
+        if aruco_ids is not None:
+            aruco_ids = filter(lambda x: x[0] != 17, aruco_ids)
+
 
         poses_result = None
         image_result = None
@@ -81,7 +87,7 @@ class ArucoWrapper:
                                                 self.marker_length / 2);
 
 
-        return image_color, poses_result
+        return image_color, poses_result, aruco_corners
 
     def get_poses_from_image(self,image, draw_image=False):
         _, aruco_corners, aruco_ids, _ = self.find_corners_from_image(image)
