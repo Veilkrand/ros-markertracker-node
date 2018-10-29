@@ -64,7 +64,9 @@ class PublisherSubscriberProcessFrame(object):
         self.detector = ArucoWrapper(self.marker_length, _camera_matrix, _dist_coeffs, aruco_dictionary=_aruco_dictionary)
 
         # Subscriber
-        self.image_sub = rospy.Subscriber(_input_image_topic, Image, self.process_frame, queue_size=1)
+        self.image_sub = rospy.Subscriber(_input_image_topic, Image, self._callback, queue_size=1)
+        self.latest_msg = None  # to keep latest received message
+        self.new_msg_available = False
 
         ## Publishers
         # Image Publisher
@@ -77,12 +79,31 @@ class PublisherSubscriberProcessFrame(object):
         # Result publisher
         self.result_pub = rospy.Publisher(_result_poses_topic, Image, queue_size=1)
 
+
+        ## Rospy loop
+        r = rospy.Rate(10) # 10 Hz
+        while not rospy.is_shutdown():
+            if self.new_msg_available:
+
+                self.new_msg_available = False
+
+                self.process_frame(self.latest_msg)
+
+                #rospy.loginfo(msg)
+                r.sleep()
+
+
+
     def _publish_cv_image(self, image):
         if image is None: return
         try:
             self.image_pub.publish(self.bridge.cv2_to_imgmsg(image, "bgr8"))
         except CvBridgeError as e:
             print(e)
+
+    def _callback(self, data):
+        self.latest_msg = data
+        self.new_msg_available = True
 
     def process_frame(self, image):
 
