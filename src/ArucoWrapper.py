@@ -63,17 +63,19 @@ class ArucoWrapper:
                                                                        self.camera_matrix,
                                                                        self.dist_coeffs)
 
+
             for i in range(len(aruco_ids)):
 
                 euler = self._get_euler_vector_from_rvec(rvecs[i])
+
+                # euler = self._euler2(tvecs[i],rvecs[i])
 
                 #x = tvecs[i][0][0]
                 #y = tvecs[i][0][1]
                 #z = tvecs[i][0][2]
 
                 pose = { 'marker_id': aruco_ids[i][0],
-                         #'tvec': (x, y, z),
-                         'tvec': tvecs.flatten(),
+                         'tvec': tvecs[i].flatten(),
                          'rvec': rvecs[i].flatten(),
                          'euler': euler }
 
@@ -93,11 +95,10 @@ class ArucoWrapper:
         _, aruco_corners, aruco_ids, _ = self.find_corners_from_image(image)
         return self.find_poses_from_corners(aruco_ids,aruco_corners,image,draw_image=draw_image)
 
-
-
-    def _get_euler_vector_from_rvec(self, rvec):
-        rmat, _ = cv2.Rodrigues(rvec)
+    def _get_euler_vector_from_rvec(self, rvec): # Is it working right?
+        rmat, _ = cv2.Rodrigues(rvec) # Convert rvec to a 3x3 matrix using cv2.Rodrigues()
         euler = rotationMatrixToEulerAngles(rmat)
+
         return euler
 
 # TODO: move or refactor. Helper functions for calculating euler angles after a pose estimation
