@@ -21,17 +21,30 @@ import rospy
 import cv2
 from cv_bridge import CvBridge, CvBridgeError
 from visualization_msgs.msg import Marker, MarkerArray
-from geometry_msgs.msg import Point, PoseWithCovarianceStamped, PoseArray, Pose  #, Point32
+from geometry_msgs.msg import Point, PoseWithCovarianceStamped, PoseArray, Pose, PoseStamped  #, Point32
 from sensor_msgs.msg import Image #, CameraInfo
-from tf.transformations import quaternion_from_euler
+from tf.transformations import quaternion_from_euler, euler_from_quaternion, euler_from_matrix
+#from tf import TransformBroadcaster
 
+import math
 
-from markertracker_node.msg import Marker, MarkersArray
+from markertracker_node.msg import GateMarker, GateMarkersArray
 
-import tf.transformations as tf # Needed?
 
 from ArucoWrapper import ArucoWrapper
 
+class ReusableIdGenerator:
+
+    def __init__(self, number):
+        self.index = -1
+        self.number = number
+
+    def get_id(self):
+
+        self.index += 1
+        if self.index == self.number: self.index = 0
+
+        return self.index
 
 class PublisherSubscriberProcessFrame(object):
     """
@@ -43,8 +56,9 @@ class PublisherSubscriberProcessFrame(object):
         self.node_name = _node_name
         # Publisher topics
         _result_image_topic = _node_name + '/image_result'
-        _result_poses_topic = _node_name + '/markers'
-        _result_markers_viz_topic = _node_name + '/visualization_marker'
+        _result_poses_topic = _node_name + '/poses'
+        _result_markers_viz_topic = _node_name + '/visualization_markers'
+        _result_marker_topic = _node_name + '/gate_markers'
 
         # Params
         _input_image_topic = rospy.get_param("~input_image_topic")
@@ -72,16 +86,24 @@ class PublisherSubscriberProcessFrame(object):
         self.new_msg_available = False
 
         ## Publishers
+
+        # TF broadcaster
+        #self.tf_br = TransformBroadcaster()
+
         # Image Publisher
         if self.publish_topic_image_result:
             self.image_pub = rospy.Publisher(_result_image_topic, Image, queue_size=1)
-        # Marker viz publisher
-        self.marker_viz_pub = rospy.Publisher(_result_markers_viz_topic, PoseArray, queue_size=1)
-        # Marker results publishers
-        self.marker_pub = rospy.Publisher(_result_poses_topic, MarkersArray, queue_size=100)
-        # Result publisher
-        self.result_pub = rospy.Publisher(_result_poses_topic, Image, queue_size=1)
 
+        # Marker viz marker publisher
+        self.marker_viz_pub = rospy.Publisher(_result_markers_viz_topic, MarkerArray, queue_size=100)
+
+        # Marker viz pose publisher
+        self.poses_pub = rospy.Publisher(_result_poses_topic, PoseArray, queue_size=100)
+
+        # GateMarker publisher
+        self.gate_marker_pub = rospy.Publisher(_result_marker_topic, GateMarkersArray, queue_size=100)
+
+        self.id_gen = ReusableIdGenerator(500)
 
         ## Rospy loop
         r = rospy.Rate(30) # 10 Hz
@@ -119,12 +141,12 @@ class PublisherSubscriberProcessFrame(object):
             print(e)
 
         ## Pose and corners used
-        cv_image_result, poses, corners = self.detector.get_poses_from_image(cv_image, draw_image=self.publish_topic_image_result)
+        cv_image_result, poses = self.detector.get_poses_from_image(cv_image, draw_image=self.publish_topic_image_result)
 
-        # process pose
+        # process poses to massages
         if poses is not None:
-            self._create_and_publish_markers_msg_from_results(poses, corners, image.header.stamp, self._camera_frame_id)
-            # self._create_viz_markers_from_results(poses)
+
+            self._create_and_publish_markers_msgs_from_pose_results(poses, image.header.stamp, self._camera_frame_id)
 
         if cv_image_result is not None: image = cv_image_result
 
@@ -132,104 +154,148 @@ class PublisherSubscriberProcessFrame(object):
         if self.publish_topic_image_result:
             self._publish_cv_image(image)
 
-    def _create_and_publish_markers_msg_from_results(self, poses, corners, image_timestamp, camera_frame_id):
+
+    def create_viz_marker_object(self, pose):
+
+        marker = Marker()
+        marker.id = self.id_gen.get_id()
+        marker.ns = self.node_name
+        marker.header.frame_id = self._camera_frame_id
+        marker.type = marker.CUBE
+        marker.action = marker.ADD
+        marker.lifetime = rospy.Duration(2)
+
+        # TODO: dims to params
+        marker.scale.x = 0.025
+        marker.scale.y = 1
+        marker.scale.z = 1
+
+        marker.color.r = 0.0
+        marker.color.g = 1.0
+        marker.color.b = 0.0
+        marker.color.a = 0.10
+
+        marker.pose.position = pose.position
+        marker.pose.orientation = pose.orientation
+
+        return marker
+
+    def _create_and_publish_markers_msgs_from_pose_results(self, poses, image_timestamp, camera_frame_id):
         #print(poses)
 
-        markers_array = MarkersArray()
-        markers_array.header.stamp = rospy.Time.now()
-        markers_array.camera_frame_stamp = image_timestamp
+        marker_array = MarkerArray() # For Rviz visualization
 
-        # Only if Viz is enable
-        viz_pose_array = PoseArray()
-        #viz_pose_array.header.stamp = rospy.Time.now()
-        viz_pose_array.header.stamp = image_timestamp
-        viz_pose_array.header.frame_id = camera_frame_id
+        pose_array = PoseArray() # For Rviz visualization with current time stamp
+        pose_array.header.stamp = image_timestamp
+        pose_array.header.frame_id = camera_frame_id
 
+        gate_marker_array = GateMarkersArray() # For output results
+        gate_marker_array.header.stamp = rospy.Time.now()
+        gate_marker_array.camera_frame_stamp = image_timestamp
 
-        #rospy.loginfo(poses[0]['euler'])
-
-        # TODO: This iteration is extremely slow. Slower than the image generation. One marker Hz=20, list iteration Hz=8
+        _index = -1
         for e in poses:
 
-            marker = Marker()
-            marker.id = int(e['marker_id'])
-            marker.camera_frame_stamp = image_timestamp # Is it necessary to include this?
-            marker.translation_vector = Point(e['tvec'][0], e['tvec'][1], e['tvec'][2])
-            marker.rotation_vector = Point(e['rvec'][0],e['rvec'][1],e['rvec'][2])
-            marker.rotation_euler = Point(e['euler'][0],e['euler'][1],e['euler'][2])
-            # marker.corners = corners[0] # TODO: needs implementation
+            _index += 1
+
+            if e['marker_id'] != 10: continue # TODO: use params
+
+            gate_pose = Pose()
+            gate_pose.position = Point(e['tvec'][2]/100, -e['tvec'][0]/100, -e['tvec'][1]/100) # z, -x, -y
+
+
+
+            # Can't get this to work
+            # _quaternion = quaternion_from_euler(-e['euler'][0], # Pitch
+            #                                     e['euler'][1], # Yaw
+            #                                     e['euler'][2] + math.pi, # Roll
+            #                                     'ryzx'
+            #                                     )
+
+
+            _quaternion = quaternion_from_euler(e['ros_rpy'][0],
+                                                e['ros_rpy'][1],
+                                                e['ros_rpy'][2]
+                                                )
+
+            gate_pose.orientation.x = _quaternion[0]
+            gate_pose.orientation.y = _quaternion[1]
+            gate_pose.orientation.z = _quaternion[2]
+            gate_pose.orientation.w = _quaternion[3]
+
+            gate_viz_marker = self.create_viz_marker_object(gate_pose)
+
+            gate_marker = self.create_gate_marker_object(gate_pose, tuple(e['corners']), camera_frame_id, image_timestamp, e['marker_id'])
+
+
+            '''
+            # Send transform
+            self.tf_br.sendTransform((gate_pose.position.x, gate_pose.position.y, gate_pose.position.z),
+                                     _quaternion,
+                                     image_timestamp,
+                                     'marker',
+                                     camera_frame_id)
+
+            '''
+
 
             # PoseWithCovarianceStamped
-            marker.pose_cov_stamped = self._create_pose_cov_stamped(marker, camera_frame_id, image_timestamp)
+            #marker.pose_cov_stamped = self._create_pose_cov_stamped(marker, camera_frame_id, image_timestamp)
 
-            markers_array.marker.append(marker)
-            # Viz
-            viz_pose_array.poses.append(marker.pose_cov_stamped.pose.pose)
-
-
-
-        # Publish marker array
-        self.marker_pub.publish(markers_array)
-
-        # Only if viz is enables
-        self.marker_viz_pub.publish(viz_pose_array)
+            marker_array.markers.append(gate_viz_marker)
+            pose_array.poses.append(gate_pose)
+            gate_marker_array.marker.append(gate_marker)
 
 
-    def _create_pose_cov_stamped(self, marker, frame_id, camera_frame_stamp):
-        """
-        From OpenCV vectors to ROS Pose object
-        :param marker:
-        :param frame_id:
-        :return:
-        """
-
-        pose_stamped = PoseWithCovarianceStamped()
-
-        pose_stamped.header.frame_id = frame_id
-        pose_stamped.header.stamp = camera_frame_stamp
-
-        # pose_stamped.pose.pose.position = marker.translation_vector
-        # Change units from cm to m. Change axis representation
-        pose_stamped.pose.pose.position.x = marker.translation_vector.z / 100.0 #z
-        pose_stamped.pose.pose.position.y = - marker.translation_vector.x / 100.0 #x
-        pose_stamped.pose.pose.position.z = - marker.translation_vector.y / 100.0 #y
+        # DEBUG
 
 
-        """
-        marker.rotation_euler.x = 0.0
-        marker.rotation_euler.y = 0.0
-        marker.rotation_euler.z = 0.0
+        '''
+        _q = (marker_array.markers[0].pose.orientation.x,
+              marker_array.markers[0].pose.orientation.y,
+              marker_array.markers[0].pose.orientation.z,
+              marker_array.markers[0].pose.orientation.w)
 
-        """
-        _quaternion = quaternion_from_euler(marker.rotation_euler.x, #z
-                                            marker.rotation_euler.y, #x
-                                            marker.rotation_euler.z, #y
-                                            axes='ryzx' ) # ryzx rxzy rzxy ryxz
-
-        pose_stamped.pose.pose.orientation.x = _quaternion[0]
-        pose_stamped.pose.pose.orientation.y = _quaternion[1]
-        pose_stamped.pose.pose.orientation.z = _quaternion[2]
-        pose_stamped.pose.pose.orientation.w = _quaternion[3]
+        _euler = euler_from_quaternion(_q)
+        #_R = e['rot_m']
+        #_euler = euler_from_matrix(_R, 'rzyx')
 
 
-        """
-        pose_stamped.pose.pose.orientation.x = 0
-        pose_stamped.pose.pose.orientation.y = 0
-        pose_stamped.pose.pose.orientation.z = 0
-        pose_stamped.pose.pose.orientation.w = 1
-        """
+        _r = 180 * _euler[0] / math.pi
+        _p = 180 * _euler[1] / math.pi
+        _y = 180 * _euler[2] / math.pi
+        rospy.loginfo("R:{:.0f} P:{:.0f} Y:{:.0f}".format(_r, _p, _y))
+        '''
 
-        # TODO: simple covariances... Assign better for aruco and/or camera??
-        _covariance = [ 1e-6, 0, 0, 0, 0, 0,
-                        0, 1e-6, 0, 0, 0, 0,
-                        0, 0, 1e-6, 0, 0, 0,
-                        0, 0, 0, 1e-3, 0, 0,
-                        0, 0, 0, 0, 1e-3, 0,
-                        0, 0, 0, 0, 0, 1e-3 ]
+        # Publish Topics
+        self.poses_pub.publish(pose_array)
+        self.marker_viz_pub.publish(marker_array)
+        self.gate_marker_pub.publish(gate_marker_array)
 
-        pose_stamped.pose.covariance = _covariance
+    def create_gate_marker_object(self, pose, corners, frame_id, image_timestamp, marker_id):
 
-        return pose_stamped
+        marker = GateMarker()
+
+        marker.id = marker_id
+        marker.corners = corners
+        marker.pose_cov_stamped.header.frame_id = frame_id
+        marker.pose_cov_stamped.header.stamp = image_timestamp
+        marker.pose_cov_stamped.pose.pose = pose
+
+        # TODO: simple covariances... Get from latest ego pose/odometry
+        _covariance = [1e-6, 0, 0, 0, 0, 0,
+                       0, 1e-6, 0, 0, 0, 0,
+                       0, 0, 1e-6, 0, 0, 0,
+                       0, 0, 0, 1e-3, 0, 0,
+                       0, 0, 0, 0, 1e-3, 0,
+                       0, 0, 0, 0, 0, 1e-3]
+
+        marker.pose_cov_stamped.pose.covariance = _covariance
+
+        return marker
+
+
+
 
 if __name__ == '__main__':
 

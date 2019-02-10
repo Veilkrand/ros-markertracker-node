@@ -1,4 +1,5 @@
 # Marker Tracker ROS node
+> Alberto S. Naranjo Galet. 2018
 
 Node to detect and estimate pose of ArUCO markers from a subscribed raw image topic from the camera.
 In v2 a ROS Pose with covariance stamped message is also provided. Local pose is stamped with the original camera frame stamp.
@@ -7,12 +8,9 @@ In v2 a ROS Pose with covariance stamped message is also provided. Local pose is
 ## TODO
 
 -- Implement blacklist and whitelist for aruco Ids. 17 is easily confused for 4x4 and background noise
--- Finish message implementation
--- Check real latency and delay. For result packages and initial image frames: how long since the capture of the raw image from camera.
--- Publish stamped pose with covariances with original camera image stamp.
 -- Add original covariances from local ego pose. 
--- Implement full visualization for rviz? Not here.
 -- Optimize Aruco classes. Include all params for aruco.
+-- Optimize OpenCV euler to ros quaternion
 
 
 ## Inputs Parameters. TODO: Update to latest inputs
@@ -26,24 +24,17 @@ In v2 a ROS Pose with covariance stamped message is also provided. Local pose is
 
 ## Outputs Topics
 
- * /markertracker_node/detected_markers
- * /markertracker_node/image_result (only if `show_image_topic==True`)
+ * */markertracker_node/image_result* (only if `show_image_topic==True`)
+ * */markertracker_node/poses* With correct frame id and timestamp 
+ * */markertracker_node/visualization_markers*
+ * */markertracker_node/gate_markers*
+
  
 ## Result Visualization
 
 `rqt_image_view`
 `rosrun image_view image_view image:=markertracker_node/image_result`
 
-
-## Output marker object. TODO: This is Outdated
-```
-    {
-        'marker_id': 10,
-        'tvec': array([-17.79854065,  -4.45784617,  59.2286418 ]),
-        'rvec': array([ 2.9659655 ,  0.19115458, -0.55335781]), 
-        'euler': array([ 3.04171163,  0.3740164 ,  0.10980613])
-    }
-```
 
 ## Rosbag
 Save only camera images topics:

@@ -7,6 +7,38 @@ import cv2.aruco as aruco
 import numpy as np
 import math
 
+'''
+/** this conversion uses conventions as described on page:
+*   https://www.euclideanspace.com/maths/geometry/rotations/euler/index.htm
+*   Coordinate System: right hand
+*   Positive angle: right hand
+*   Order of euler angles: heading first, then attitude, then bank
+*   matrix row column ordering:
+*   [m00 m01 m02]
+*   [m10 m11 m12]
+*   [m20 m21 m22]*/
+'''
+
+
+def rvec2rpy_ros(m):
+
+    # // Assuming the angles are in radians.
+    if (m[1, 0] > 0.998):  # // singularity at north pole
+        yaw = math.atan2(m[0, 2], m[2, 2])
+        roll = math.PI / 2
+        pitch = 0
+    elif m[1, 0] < -0.998:  # // singularity at south pole
+        yaw = math.atan2(m[0, 2], m[2, 2])
+        roll = -math.PI / 2
+        pitch = 0
+
+    else:
+        yaw = -math.atan2(-m[2, 0], m[0, 0]) + math.pi
+        pitch = math.atan2(m[2, 2], m[1, 2]) + math.pi / 2  # math.atan2(-m[1, 2], m[1, 1])
+        roll = -math.asin(m[1, 0])
+
+    return roll, pitch, yaw
+
 
 class ArucoWrapper:
 
@@ -27,7 +59,7 @@ class ArucoWrapper:
     def find_corners_from_image(self, image, draw_image=False):
 
         # TODO: implement param???
-        image_is_gray = True
+        image_is_gray = False
         if image_is_gray:
             image_gray = image
         else:
@@ -74,10 +106,20 @@ class ArucoWrapper:
                 #y = tvecs[i][0][1]
                 #z = tvecs[i][0][2]
 
+                #ros_rpy = self.rpy_decomposition(rvecs[i])
+
+                R, _ = cv2.Rodrigues(rvecs[i])
+
+
+
                 pose = { 'marker_id': aruco_ids[i][0],
+                         'corners': aruco_corners[i].flatten(),
                          'tvec': tvecs[i].flatten(),
                          'rvec': rvecs[i].flatten(),
-                         'euler': euler }
+                         'ros_rpy' : rvec2rpy_ros(R),
+                         'rot_m' : R,
+                         'euler': euler
+                        }
 
                 poses_result.append(pose)
 
@@ -89,7 +131,7 @@ class ArucoWrapper:
                                                 self.marker_length / 2);
 
 
-        return image_color, poses_result, aruco_corners
+        return image_color, poses_result
 
     def get_poses_from_image(self,image, draw_image=False):
         _, aruco_corners, aruco_ids, _ = self.find_corners_from_image(image)
@@ -100,6 +142,26 @@ class ArucoWrapper:
         euler = rotationMatrixToEulerAngles(rmat)
 
         return euler
+
+    def rpy_decomposition(self, rvec): # DONT WORK
+
+        R, _ = cv2.Rodrigues(rvec)
+
+        sin_x = math.sqrt(R[2, 0] * R[2, 0] + R[2, 1] * R[2, 1])
+        singular = sin_x < 1e-6
+        if not singular:
+            z1 = math.atan2(R[2, 0], R[2, 1])  # around z1-axis
+            x = math.atan2(sin_x, R[2, 2])  # around x-axis
+            z2 = math.atan2(R[0, 2], -R[1, 2])  # around z2-axis
+        else:  # gimbal lock
+            z1 = 0  # around z1-axis
+            x = math.atan2(sin_x, R[2, 2])  # around x-axis
+            z2 = 0  # around z2-axis
+
+        z2 = -(2*math.pi -z2)%(2*math.pi)
+
+        #return z1, x, z2
+        return 0.0, x, z2
 
 # TODO: move or refactor. Helper functions for calculating euler angles after a pose estimation
 # Checks if a matrix is a valid rotation matrix.
